@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SourceType {
+  AUSTENDER
+  GRANTCONNECT
+  WA_WHO_BUYS_WHAT
+  WA_AUDITOR_GENERAL
+  MANUAL
+  DEMO
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Agency {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  jurisdiction  String
+  abn           String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  contracts     Contract[]
+  grants        Grant[]
+  auditFindings AuditFinding[]
+  reports       Report[]
+}
+
+model SupplierRecipient {
+  id         String      @id @default(cuid())
+  name       String
+  abn        String?
+  type       String
+  createdAt  DateTime    @default(now())
+  contracts  Contract[]
+  grants     Grant[]
+
+  @@unique([name, abn])
+}
+
+model SourceRecord {
+  id              String      @id @default(cuid())
+  sourceType      SourceType
+  sourceUrl       String
+  sourceTitle     String
+  publicationDate DateTime?
+  identifier      String?
+  rawJson         Json
+  checksum        String?
+  createdAt       DateTime    @default(now())
+
+  provenanceLinks Provenance[]
+
+  @@unique([sourceType, sourceUrl, identifier])
+}
+
+model Contract {
+  id              String       @id @default(cuid())
+  externalId      String?
+  title           String
+  category        String
+  amount          Decimal      @db.Decimal(16, 2)
+  awardedAt       DateTime
+  agencyId        String
+  supplierId      String
+  sourceRecordId  String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  agency          Agency       @relation(fields: [agencyId], references: [id])
+  supplier        SupplierRecipient @relation(fields: [supplierId], references: [id])
+  sourceRecord    SourceRecord @relation(fields: [sourceRecordId], references: [id])
+  amendments      Amendment[]
+  provenance      Provenance[]
+
+  @@index([agencyId, category, awardedAt])
+}
+
+model Grant {
+  id              String       @id @default(cuid())
+  externalId      String?
+  program         String
+  amount          Decimal      @db.Decimal(16, 2)
+  awardedAt       DateTime
+  agencyId        String
+  recipientId     String
+  sourceRecordId  String
+  createdAt       DateTime     @default(now())
+
+  agency          Agency       @relation(fields: [agencyId], references: [id])
+  recipient       SupplierRecipient @relation(fields: [recipientId], references: [id])
+  sourceRecord    SourceRecord @relation(fields: [sourceRecordId], references: [id])
+  provenance      Provenance[]
+}
+
+model Amendment {
+  id             String       @id @default(cuid())
+  contractId     String
+  amendedAt      DateTime
+  amountDelta    Decimal      @db.Decimal(16, 2)
+  reason         String?
+  sourceRecordId String
+
+  contract       Contract     @relation(fields: [contractId], references: [id])
+  sourceRecord   SourceRecord @relation(fields: [sourceRecordId], references: [id])
+  provenance     Provenance[]
+}
+
+model Report {
+  id             String       @id @default(cuid())
+  title          String
+  reportDate     DateTime
+  summary        String?
+  jurisdiction   String
+  sourceUrl      String
+  sourceRecordId String
+  agencyId       String?
+
+  agency         Agency?      @relation(fields: [agencyId], references: [id])
+  sourceRecord   SourceRecord @relation(fields: [sourceRecordId], references: [id])
+  findings       AuditFinding[]
+  provenance     Provenance[]
+}
+
+model AuditFinding {
+  id             String       @id @default(cuid())
+  title          String
+  summary        String
+  severity       String
+  reportId       String
+  agencyId       String
+  pageReference  String?
+  createdAt      DateTime     @default(now())
+
+  report         Report       @relation(fields: [reportId], references: [id])
+  agency         Agency       @relation(fields: [agencyId], references: [id])
+  provenance     Provenance[]
+}
+
+model Anomaly {
+  id                    String       @id @default(cuid())
+  anomalyType           String
+  title                 String
+  summary               String
+  riskLevel             RiskLevel
+  confidenceScore       Int
+  weightedScore         Int
+  explainabilityJson    Json
+  alternativesJson      Json
+  timelineJson          Json
+  generatedAt           DateTime     @default(now())
+
+  provenance            Provenance[]
+  caseItems             CaseItem[]
+}
+
+model InvestigationBrief {
+  id                    String       @id @default(cuid())
+  title                 String
+  bodyMarkdown          String
+  citationsJson         Json
+  generatedBy           String
+  createdAt             DateTime     @default(now())
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  cases        UserCase[]
+}
+
+model UserCase {
+  id                 String       @id @default(cuid())
+  userId             String
+  title              String
+  notes              String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  user               User         @relation(fields: [userId], references: [id])
+  items              CaseItem[]
+}
+
+model CaseItem {
+  id         String    @id @default(cuid())
+  caseId     String
+  anomalyId  String?
+  sourceId   String?
+  note       String?
+
+  userCase   UserCase  @relation(fields: [caseId], references: [id])
+  anomaly    Anomaly?  @relation(fields: [anomalyId], references: [id])
+}
+
+model Provenance {
+  id             String       @id @default(cuid())
+  sourceRecordId String
+  entityType     String
+  entityId       String
+  excerpt        String?
+  pageReference  String?
+  createdAt      DateTime     @default(now())
+
+  sourceRecord   SourceRecord @relation(fields: [sourceRecordId], references: [id])
+
+  @@index([entityType, entityId])
+}
